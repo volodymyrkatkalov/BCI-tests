@@ -59,11 +59,16 @@ from bci_tester.data import KIOSK_XORG_CLIENT_CONTAINERS
 from bci_tester.data import KIOSK_XORG_CONTAINERS
 from bci_tester.data import KIWI_CONTAINERS
 from bci_tester.data import KUBECTL_CONTAINERS
+from bci_tester.data import KUBEVIRT_CDI_CONTAINERS
+from bci_tester.data import KUBEVIRT_CONTAINERS
 from bci_tester.data import L3_CONTAINERS
+from bci_tester.data import LMCACHE_LMSTACK_ROUTER_CONTAINER
+from bci_tester.data import LMCACHE_VLLM_OPENAI_CONTAINER
 from bci_tester.data import LTSS_BASE_CONTAINERS
 from bci_tester.data import LTSS_BASE_FIPS_CONTAINERS
 from bci_tester.data import MARIADB_CLIENT_CONTAINERS
 from bci_tester.data import MARIADB_CONTAINERS
+from bci_tester.data import MCPO_CONTAINER
 from bci_tester.data import MICRO_CONTAINER
 from bci_tester.data import MICRO_FIPS_CONTAINER
 from bci_tester.data import MILVUS_CONTAINER
@@ -88,6 +93,7 @@ from bci_tester.data import PROMETHEUS_CONTAINERS
 from bci_tester.data import PYTHON_CONTAINERS
 from bci_tester.data import PYTORCH_CONTAINER
 from bci_tester.data import RELEASED_LTSS_VERSIONS
+from bci_tester.data import RMT_CONTAINERS
 from bci_tester.data import RUBY_CONTAINERS
 from bci_tester.data import RUST_CONTAINERS
 from bci_tester.data import SAMBA_CLIENT_CONTAINERS
@@ -101,6 +107,7 @@ from bci_tester.data import SUSE_AI_OBSERVABILITY_EXTENSION_SETUP
 from bci_tester.data import TARGET
 from bci_tester.data import TOMCAT_CONTAINERS
 from bci_tester.data import VALKEY_CONTAINERS
+from bci_tester.data import VLLM_OPENAI_CONTAINER
 from bci_tester.data import ImageType
 from bci_tester.runtime_choice import PODMAN_SELECTED
 
@@ -321,6 +328,18 @@ IMAGES_AND_NAMES: List[ParameterSet] = [
             "open-webui-pipelines",
             ImageType.SAC_APPLICATION,
         ),
+        (VLLM_OPENAI_CONTAINER, "vllm-openai", ImageType.SAC_APPLICATION),
+        (
+            LMCACHE_VLLM_OPENAI_CONTAINER,
+            "lmcache-vllm-openai",
+            ImageType.SAC_APPLICATION,
+        ),
+        (
+            LMCACHE_LMSTACK_ROUTER_CONTAINER,
+            "lmcache-lmstack-router",
+            ImageType.SAC_APPLICATION,
+        ),
+        (MCPO_CONTAINER, "mcpo", ImageType.SAC_APPLICATION),
     ]
     + [(STUNNEL_CONTAINER, "stunnel", ImageType.APPLICATION)]
     + [
@@ -351,15 +370,18 @@ IMAGES_AND_NAMES: List[ParameterSet] = [
         (samba_ctr, "samba-toolbox", ImageType.APPLICATION)
         for samba_ctr in SAMBA_TOOLBOX_CONTAINERS
     ]
+    + [(rmt, "rmt-server", ImageType.APPLICATION) for rmt in RMT_CONTAINERS]
     + [
         (
-            pr_ctr,
-            container_and_marks_from_pytest_param(pr_ctr)[0]
+            app_ctr,
+            container_and_marks_from_pytest_param(app_ctr)[0]
             .baseurl.rpartition("/")[2]
             .rpartition(":")[0],
             ImageType.APPLICATION,
         )
-        for pr_ctr in SPR_CONTAINERS
+        for app_ctr in SPR_CONTAINERS
+        + KUBEVIRT_CONTAINERS
+        + KUBEVIRT_CDI_CONTAINERS
     ]
 ]
 
@@ -495,8 +517,12 @@ def test_url(
             ImageType.SAC_LANGUAGE_STACK,
             ImageType.SAC_APPLICATION,
         ):
+            container_mapping: dict[str, str] = {
+                "lmcache-lmstack-router": "vllm",
+                "lmcache-vllm-openai": "vllm",
+            }
             expected_url = (
-                f"https://apps.rancher.io/applications/{container_name}",
+                f"https://apps.rancher.io/applications/{container_mapping.get(container_name, container_name)}",
                 f"https://apps.rancher.io/applications/{container_name.rpartition('-')[0]}",
             )
         elif container_type == ImageType.OS_LTSS:
@@ -632,7 +658,7 @@ def test_disturl(
             )
         else:
             assert (
-                f"obs://build.suse.de/SUSE:SLFO:Products:SLES:16.{OS_SP_VERSION}"
+                f"obs://build.suse.de/SUSE:SLFO:Products:BCI:16.{OS_SP_VERSION}"
                 in disturl
             )
     else:

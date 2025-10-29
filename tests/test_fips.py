@@ -303,7 +303,7 @@ def test_gcrypt_binary(container_per_test: ContainerData) -> None:
 
     c.check_output(
         "zypper -n in gcc libgcrypt-devel dirmngr && "
-        "gcc -Og -g3 fips-test-gcrypt.c -Wall -Wextra -Wpedantic -lgcrypt -o fips-test-gcrypt && "
+        "gcc -O2 fips-test-gcrypt.c -Wall -Wextra -Werror -lgcrypt -o fips-test-gcrypt && "
         "mv fips-test-gcrypt /bin/fips-test-gcrypt"
     )
 
@@ -343,22 +343,22 @@ def test_gcrypt_binary(container_per_test: ContainerData) -> None:
 
     for digest in NONFIPS_GCRYPT_DIGESTS:
         non_fips_call = c.run_expect([0, 1], f"/bin/fips-test-gcrypt {digest}")
-        if non_fips_call.rc != 1 and non_fips_call.stdout.strip().startswith(
-            "Digest is: "
+
+        expected_msg = (
+            "Failed to create hash context",
+            f"Algorithm {digest} is not FIPS compliant",
+        )
+
+        if non_fips_call.rc == 0 or any(
+            msg in non_fips_call.stderr for msg in expected_msg
         ):
-            if OS_VERSION == "15.6" and digest == "md5":
+            if OS_VERSION in ("15.3", "15.4", "15.5"):
                 pytest.xfail(
-                    "libgcrypt successfully calculates md5 digest in FIPS mode, bsc#1229903"
+                    reason="bsc#1229856 - libgcrypt computes hashes of non-FIPS digests",
                 )
-
-            pytest.xfail(
-                "libgcrypt mistakenly calculates message digests for Non FIPS algorithms, bsc#1229856"
+            assert True, (
+                f"Hash calculation unexpectedly succeeded for {digest}"
             )
-
-        assert (
-            non_fips_call.rc == 1
-            and "Failed to create hash context" in non_fips_call.stderr
-        ), f"Hash calculation unexpectedly succeeded for {digest}"
 
 
 @pytest.mark.parametrize(

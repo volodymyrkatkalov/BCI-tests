@@ -1,7 +1,9 @@
-#!/usr/bin/env python3
+"""Common data and container definitions for the BCI testsuite"""
+
 import enum
 import os
 from datetime import timedelta
+from itertools import product
 from pathlib import Path
 from typing import Iterable
 from typing import Optional
@@ -59,6 +61,7 @@ ALLOWED_BCI_REPO_OS_VERSIONS = (
     "15.6-ai",
     "15.6-spr",
     "15.7",
+    "16.0",
     "tumbleweed",
 )
 
@@ -189,7 +192,7 @@ else:
     obs_project: str = f"registry.opensuse.org/devel/bci/{DISTNAME}"
     if OS_VERSION.startswith("16"):
         ibs_cr_project = (
-            f"registry.suse.de/suse/slfo/products/sles/{DISTNAME}/test"
+            f"registry.suse.de/suse/slfo/products/bci/{DISTNAME}/test"
         )
     elif OS_VERSION == "15.6-ai":
         obs_project = "registry.suse.de/devel/ai"
@@ -212,9 +215,7 @@ else:
     }[TARGET]
 
 
-BCI_REPO_NAME = "SLE_BCI"
-if OS_VERSION == "tumbleweed":
-    BCI_REPO_NAME = "repo-oss"
+BCI_REPO_NAME = "repo-oss" if OS_VERSION == "tumbleweed" else "SLE_BCI"
 
 
 def create_container_version_mark(
@@ -252,24 +253,24 @@ if BCI_DEVEL_REPO is None:
         BCI_DEVEL_REPO = "http://download.opensuse.org/tumbleweed/repo/oss/"
     else:
         # from SLE 15 SP6 onward we use the unauthenticated CDN
-        cdn_prefix = (
+        CDN_PREFIX = (
             "public-dl"
             if OS_SP_VERSION >= 6 or OS_MAJOR_VERSION > 15
             else "updates"
         )
         if OS_MAJOR_VERSION > 15:
-            BCI_DEVEL_REPO = f"https://{cdn_prefix}.suse.com/SUSE/Products/SLE-BCI/{OS_MAJOR_VERSION}.{OS_SP_VERSION}/{LOCALHOST.system_info.arch}/product/"
+            BCI_DEVEL_REPO = f"https://{CDN_PREFIX}.suse.com/SUSE/Products/SLE-BCI/{OS_MAJOR_VERSION}.{OS_SP_VERSION}/{LOCALHOST.system_info.arch}/product/"
         else:
-            BCI_DEVEL_REPO = f"https://{cdn_prefix}.suse.com/SUSE/Products/SLE-BCI/{OS_MAJOR_VERSION}-SP{OS_SP_VERSION}/{LOCALHOST.system_info.arch}/product/"
-    _BCI_REPLACE_REPO_CONTAINERFILE = ""
+            BCI_DEVEL_REPO = f"https://{CDN_PREFIX}.suse.com/SUSE/Products/SLE-BCI/{OS_MAJOR_VERSION}-SP{OS_SP_VERSION}/{LOCALHOST.system_info.arch}/product/"
+    _bci_replace_repo_containerfile = ""
 else:
-    bci_repo_path = f"/etc/zypp/repos.d/{BCI_REPO_NAME}.repo"
+    BCI_REPO_PATH = f"/etc/zypp/repos.d/{BCI_REPO_NAME}.repo"
     bci_repo_replace = "${line/baseurl*/baseurl = " + BCI_DEVEL_REPO + "}"
-    _BCI_REPLACE_REPO_CONTAINERFILE = f"""RUN if [ -e {bci_repo_path} ]; then \\
+    _bci_replace_repo_containerfile = f"""RUN if [ -e {BCI_REPO_PATH} ]; then \\
         while IFS= read -r line; do \\
-            echo \"{bci_repo_replace}\" >> {bci_repo_path}.tmp; \\
-        done < {bci_repo_path}; \\
-        mv {bci_repo_path}.tmp {bci_repo_path}; \\
+            echo \"{bci_repo_replace}\" >> {BCI_REPO_PATH}.tmp; \\
+        done < {BCI_REPO_PATH}; \\
+        mv {BCI_REPO_PATH}.tmp {BCI_REPO_PATH}; \\
     fi"""
 
 assert BCI_DEVEL_REPO, "BCI_DEVEL_REPO must be set at this point"
@@ -289,7 +290,7 @@ def _get_repository_name(image_type: _IMAGE_TYPE_T) -> str:
     if image_type == "dockerfile":
         return "containerfile/"
     if image_type == "kiwi":
-        return "images/"
+        return "containerkiwi/" if OS_VERSION.startswith("16") else "images/"
     raise AssertionError(f"invalid image_type: {image_type}")
 
 
@@ -425,9 +426,9 @@ def create_BCI(
         containerfile = ""
     else:
         if container_user:
-            containerfile = f"USER root\n{_BCI_REPLACE_REPO_CONTAINERFILE}\nUSER {container_user}"
+            containerfile = f"USER root\n{_bci_replace_repo_containerfile}\nUSER {container_user}"
         else:
-            containerfile = _BCI_REPLACE_REPO_CONTAINERFILE
+            containerfile = _bci_replace_repo_containerfile
 
     if (
         "SCC_CREDENTIAL_USERNAME" in os.environ
@@ -597,11 +598,11 @@ OPENJDK_DEVEL_21_CONTAINER = create_BCI(
     available_versions=_DEFAULT_NONBASE_OS_VERSIONS,
     custom_entry_point="/bin/sh",
 )
-OPENJDK_24_CONTAINER = create_BCI(
-    build_tag="bci/openjdk:24", available_versions=["tumbleweed"]
+OPENJDK_25_CONTAINER = create_BCI(
+    build_tag="bci/openjdk:25", available_versions=["tumbleweed"]
 )
-OPENJDK_DEVEL_24_CONTAINER = create_BCI(
-    build_tag="bci/openjdk-devel:24", available_versions=["tumbleweed"]
+OPENJDK_DEVEL_25_CONTAINER = create_BCI(
+    build_tag="bci/openjdk-devel:25", available_versions=["tumbleweed"]
 )
 
 
@@ -609,14 +610,14 @@ OPENJDK_CONTAINERS = [
     OPENJDK_11_CONTAINER,
     OPENJDK_17_CONTAINER,
     OPENJDK_21_CONTAINER,
-    OPENJDK_24_CONTAINER,
+    OPENJDK_25_CONTAINER,
 ]
 
 OPENJDK_DEVEL_CONTAINERS = [
     OPENJDK_DEVEL_11_CONTAINER,
     OPENJDK_DEVEL_17_CONTAINER,
     OPENJDK_DEVEL_21_CONTAINER,
-    OPENJDK_DEVEL_24_CONTAINER,
+    OPENJDK_DEVEL_25_CONTAINER,
 ]
 
 NODEJS_20_CONTAINER = create_BCI(
@@ -769,7 +770,7 @@ MARIADB_ROOT_PASSWORD = "'88tpw-n!t-s$$cr`t!"
 
 _MARIADB_VERSION_OS_MATRIX: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("10.11", ("15.6",)),
-    ("11.4", ("15.7",)),
+    ("11.8", ("15.7",)),
     ("latest", ("tumbleweed",)),
 )
 
@@ -828,17 +829,18 @@ POSTGRESQL_CONTAINERS = [
         (15, ["tumbleweed"]),
         (16, _DEFAULT_NONBASE_OS_VERSIONS),
         (17, _DEFAULT_NONBASE_OS_VERSIONS),
+        (18, ["tumbleweed"]),
     )
 ]
 
-_DISTRIBUTION_VERSION = "latest"
+_distribution_version = "latest"
 if OS_VERSION in ("15.7",):
-    _DISTRIBUTION_VERSION = "2.8"
+    _distribution_version = "2.8"
 elif OS_VERSION in ("16.0",):
-    _DISTRIBUTION_VERSION = "3.0"
+    _distribution_version = "3.0"
 
 DISTRIBUTION_CONTAINER = create_BCI(
-    build_tag=f"{APP_CONTAINER_PREFIX}/registry:{_DISTRIBUTION_VERSION}",
+    build_tag=f"{APP_CONTAINER_PREFIX}/registry:{_distribution_version}",
     bci_type=ImageType.APPLICATION,
     image_type="kiwi",
     forwarded_ports=[PortForwarding(container_port=5000)],
@@ -855,14 +857,14 @@ if OS_VERSION in (
     "15.6",
     "15.7",
 ):
-    _GIT_APP_VERSION = "2.43"
+    _git_app_version = "2.51"
 elif OS_VERSION in ("15.5", "15.4"):
-    _GIT_APP_VERSION = "2.35"
+    _git_app_version = "2.35"
 else:
-    _GIT_APP_VERSION = "latest"
+    _git_app_version = "latest"
 
 GIT_CONTAINER = create_BCI(
-    build_tag=f"{APP_CONTAINER_PREFIX}/git:{_GIT_APP_VERSION}",
+    build_tag=f"{APP_CONTAINER_PREFIX}/git:{_git_app_version}",
     bci_type=ImageType.APPLICATION,
 )
 
@@ -901,10 +903,10 @@ KUBECTL_CONTAINERS = [
     for kubectl_ver, os_versions in (
         ("oldstable", ("15.7",)),
         ("stable", ("15.7",)),
-        ("1.30", ("tumbleweed",)),
         ("1.31", ("tumbleweed",)),
         ("1.32", ("tumbleweed",)),
         ("1.33", ("tumbleweed",)),
+        ("1.34", ("tumbleweed",)),
     )
 ]
 
@@ -949,7 +951,7 @@ APACHE_TOMCAT_10_CONTAINERS = [
         available_versions=("tumbleweed",),
         forwarded_ports=[PortForwarding(container_port=8080)],
     )
-    for openjdk_version in (24, 21, 17)
+    for openjdk_version in (25, 21, 17)
 ]
 
 APACHE_TOMCAT_9_CONTAINERS = [
@@ -1047,6 +1049,24 @@ OPENWEBUI_CONTAINER = create_BCI(
     forwarded_ports=[PortForwarding(container_port=8080)],
 )
 
+MCPO_CONTAINER = create_BCI(
+    build_tag=f"{SAC_CONTAINER_PREFIX}/mcpo:0",
+    bci_type=ImageType.SAC_APPLICATION,
+    available_versions=["15.6-ai"],
+    custom_entry_point="mcpo",
+    extra_entrypoint_args=[
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--",
+        "uvx",
+        "mcp-server-time",
+        "--local-timezone=America/New_York",
+    ],
+    forwarded_ports=[PortForwarding(container_port=8000)],
+)
+
 MILVUS_CONTAINER = create_BCI(
     build_tag=f"{SAC_CONTAINER_PREFIX}/milvus:2.4",
     bci_type=ImageType.SAC_APPLICATION,
@@ -1084,6 +1104,27 @@ SUSE_AI_OBSERVABILITY_EXTENSION_SETUP = create_BCI(
 
 SUSE_AI_OBSERVABILITY_EXTENSION_RUNTIME = create_BCI(
     build_tag=f"{SAC_CONTAINER_PREFIX}/suse-ai-observability-extension-runtime:1",
+    bci_type=ImageType.SAC_APPLICATION,
+    available_versions=["15.6-ai"],
+    custom_entry_point="/bin/bash",
+)
+
+VLLM_OPENAI_CONTAINER = create_BCI(
+    build_tag=f"{SAC_CONTAINER_PREFIX}/vllm-openai:0",
+    bci_type=ImageType.SAC_APPLICATION,
+    available_versions=["15.6-ai"],
+    custom_entry_point="/bin/bash",
+)
+
+LMCACHE_VLLM_OPENAI_CONTAINER = create_BCI(
+    build_tag=f"{SAC_CONTAINER_PREFIX}/lmcache-vllm-openai:0",
+    bci_type=ImageType.SAC_APPLICATION,
+    available_versions=["15.6-ai"],
+    custom_entry_point="/bin/bash",
+)
+
+LMCACHE_LMSTACK_ROUTER_CONTAINER = create_BCI(
+    build_tag=f"{SAC_CONTAINER_PREFIX}/lmcache-lmstack-router:0",
     bci_type=ImageType.SAC_APPLICATION,
     available_versions=["15.6-ai"],
     custom_entry_point="/bin/bash",
@@ -1195,30 +1236,89 @@ SAMBA_CONTAINERS = (
     + SAMBA_TOOLBOX_CONTAINERS
 )
 
+KUBEVIRT_CONTAINERS = [
+    create_BCI(
+        build_tag=(
+            f"suse/sles/16.0/virt-{service}:1.5"
+            if os_version.startswith("16")
+            else f"{APP_CONTAINER_PREFIX}/virt-{service}:1.6"
+        ),
+        bci_type=ImageType.APPLICATION,
+        available_versions=[os_version],
+        custom_entry_point="/bin/bash",
+    )
+    for os_version, service in product(
+        ("16.0", "tumbleweed"),
+        (
+            "api",
+            "controller",
+            "exportproxy",
+            "exportserver",
+            "handler",
+            "launcher",
+            "operator",
+            "pr-helper",
+        ),
+    )
+]
+
+KUBEVIRT_CDI_CONTAINERS = [
+    create_BCI(
+        build_tag=(
+            f"suse/sles/16.0/cdi-{service}:1.60"
+            if os_version.startswith("16")
+            else f"{APP_CONTAINER_PREFIX}/cdi-{service}:latest"
+        ),
+        bci_type=ImageType.APPLICATION,
+        available_versions=[os_version],
+        custom_entry_point="/bin/bash",
+    )
+    for os_version, service in product(
+        ("16.0", "tumbleweed"),
+        (
+            "apiserver",
+            "cloner",
+            "controller",
+            "importer",
+            "uploadproxy",
+            "uploadserver",
+        ),
+    )
+]
+
+
 SPR_CONTAINERS = [
     create_BCI(
         build_tag=f"private-registry/harbor-{img}:latest",
         bci_type=ImageType.APPLICATION,
         available_versions=["15.6-spr"],
         custom_entry_point="/bin/sh" if img != "db" else "",
-        extra_environment_variables={"POSTGRES_PASSWORD": POSTGRES_PASSWORD}
-        if img == "db"
-        else {},
+        extra_environment_variables=(
+            {"POSTGRES_PASSWORD": POSTGRES_PASSWORD} if img == "db" else {}
+        ),
     )
     for img in (
+        "core",
         "db",
-        "valkey",
+        "exporter",
+        "jobservice",
+        "nginx",
+        "portal",
         "registry",
         "registryctl",
-        "core",
-        "portal",
-        "jobservice",
-        "exporter",
         "trivy-adapter",
-        "nginx",
+        "valkey",
     )
 ]
 
+RMT_CONTAINERS = [
+    create_BCI(
+        build_tag=f"{APP_CONTAINER_PREFIX}/rmt-server:2",
+        bci_type=ImageType.APPLICATION,
+        available_versions=_DEFAULT_NONBASE_SLE_VERSIONS,
+        custom_entry_point="/bin/bash",
+    )
+]
 
 CONTAINERS_WITH_ZYPPER = (
     [
@@ -1242,6 +1342,7 @@ CONTAINERS_WITH_ZYPPER = (
     + OPENJDK_DEVEL_CONTAINERS
     + PCP_CONTAINERS
     + PYTHON_CONTAINERS
+    + RMT_CONTAINERS
     + RUBY_CONTAINERS
     + RUST_CONTAINERS
     + SPACK_CONTAINERS
@@ -1286,6 +1387,7 @@ CONTAINERS_WITHOUT_ZYPPER = [
     *KIOSK_XORG_CONTAINERS,
     *KIOSK_XORG_CLIENT_CONTAINERS,
     *KIOSK_PULSEAUDIO_CONTAINERS,
+    MCPO_CONTAINER,
     MICRO_CONTAINER,
     MICRO_FIPS_CONTAINER,
     MINIMAL_CONTAINER,
@@ -1294,6 +1396,9 @@ CONTAINERS_WITHOUT_ZYPPER = [
     PYTORCH_CONTAINER,
     OPENWEBUI_CONTAINER,
     OPENWEBUI_PIPELINES_CONTAINER,
+    VLLM_OPENAI_CONTAINER,
+    LMCACHE_VLLM_OPENAI_CONTAINER,
+    LMCACHE_LMSTACK_ROUTER_CONTAINER,
     *POSTFIX_CONTAINERS,
     *TOMCAT_CONTAINERS,
     *POSTGRESQL_CONTAINERS,
@@ -1306,6 +1411,8 @@ CONTAINERS_WITHOUT_ZYPPER = [
     SUSE_AI_OBSERVABILITY_EXTENSION_RUNTIME,
     SUSE_AI_OBSERVABILITY_EXTENSION_SETUP,
     *SPR_CONTAINERS,
+    *KUBEVIRT_CONTAINERS,
+    *KUBEVIRT_CDI_CONTAINERS,
 ]
 
 
@@ -1322,10 +1429,10 @@ for ctr_without_zypp in CONTAINERS_WITHOUT_ZYPPER:
 
 #: Containers with L3 support
 # Tumbleweed has no concept of l3 support
-# 15.7 is not yet released, so no l3 support either
+# 16.1 is not yet released, so no l3 support either
 if OS_VERSION in (
     "tumbleweed",
-    "16.0",
+    "16.1",
 ):
     L3_CONTAINERS = ()
 else:
@@ -1357,6 +1464,8 @@ else:
         + GOLANG_CONTAINERS
         + KIOSK_CONTAINERS
         + KUBECTL_CONTAINERS
+        + KUBEVIRT_CONTAINERS
+        + KUBEVIRT_CDI_CONTAINERS
         + LTSS_BASE_CONTAINERS
         + LTSS_BASE_FIPS_CONTAINERS
         + MARIADB_CLIENT_CONTAINERS
@@ -1366,6 +1475,7 @@ else:
         + OPENJDK_DEVEL_CONTAINERS
         + PCP_CONTAINERS
         + PYTHON_CONTAINERS
+        + RMT_CONTAINERS
         + RUBY_CONTAINERS
         + RUST_CONTAINERS
         + SPACK_CONTAINERS

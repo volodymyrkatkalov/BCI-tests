@@ -38,7 +38,7 @@ jobs:
       - name: checkout source code
         uses: actions/checkout@v5
       - name: get the current PR
-        uses: 8BitJonny/gh-get-current-pr@3.0.0
+        uses: 8BitJonny/gh-get-current-pr@4.0.0
         id: pr
         with:
           github-token: ${{ github.token }}
@@ -98,7 +98,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.x"
       - name: Install tox
@@ -110,7 +110,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.x"
       - name: Install tox
@@ -219,14 +219,16 @@ jobs:
             os_version: "16.0"
           - toxenv: kiwi
             os_version: "16.0"
+          - toxenv: repository
+            os_version: "16.0"
 
     steps:
       - name: Clean up disk space to maximize available space
-        run: sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL && sudo docker image prune --all --force
+        run: sudo rm -rf /usr/local/*/* /usr/local/.ghcup /home/runner/.rustup /home/linuxbrew /usr/share/swift /usr/share/dotnet /opt/google/chrome /opt/microsoft/msedge /opt/ghc /opt/hostedtoolcache && sudo docker image prune --all --force
       - name: checkout source code
         uses: actions/checkout@v5
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.x"
       - name: Install tox
